@@ -1,0 +1,40 @@
+# Nix
+.direnv/
+result
+
+# Python
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/*.egg-info/
+backend/.mypy_cache/
+*.pyc
+*.pyo
+
+# Environment secrets
+backend/.env
+frontend/.env.local
+
+# Local services
+.postgres/
+.redis.log
+
+# Uploads
+backend/uploads/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# direnv
+.envrc
+.envrc_hidden_message
+
+# Example files are safe to commit, but adding explicit excludes for safety
+# backend/.env.example and frontend/.env.example are OK to commit
