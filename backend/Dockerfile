@@ -13,8 +13,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 ENV PYTHONPATH=/app
-ENV PORT=8000
+ENV PORT=8080
 
-RUN printf '#!/bin/bash\nset -e\nalembic upgrade head\nexec uvicorn app.main:app --host 0.0.0.0 --port $PORT\n' > /start.sh && chmod +x /start.sh
+RUN mkdir -p /app/uploads
+
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
 
 CMD ["/start.sh"]
