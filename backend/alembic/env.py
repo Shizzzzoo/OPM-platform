@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
-
+import os
 from app.models.base import Base
 from app.models.product import Product
 from app.models.import_job import ImportJob
@@ -13,6 +13,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+# Override sqlalchemy.url from environment variable
+database_url = os.environ.get("DATABASE_URL", "")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
