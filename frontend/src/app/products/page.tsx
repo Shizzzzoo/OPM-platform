@@ -14,6 +14,25 @@ function Toast({ message, type, onClose }: { message: string; type: "success" | 
   );
 }
 
+function ConfirmModal({ title, message, onConfirm, onCancel, danger = true }: {
+  title: string; message: string; onConfirm: () => void; onCancel: () => void; danger?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm space-y-4">
+        <h2 className="text-lg font-bold text-gray-900">{title}</h2>
+        <p className="text-sm text-gray-600">{message}</p>
+        <div className="flex gap-2 justify-end pt-2">
+          <button onClick={onCancel} className="px-4 py-2 text-sm rounded border hover:bg-gray-50">Cancel</button>
+          <button onClick={onConfirm} className={`px-4 py-2 text-sm rounded text-white ${danger ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}`}>
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditModal({ product, onClose, onSave }: { product: any; onClose: () => void; onSave: (data: any) => void }) {
   const [form, setForm] = useState({ name: product.name, price: product.price ?? "", quantity: product.quantity, is_active: product.is_active });
   return (
@@ -55,6 +74,7 @@ function EditModal({ product, onClose, onSave }: { product: any; onClose: () => 
 export default function ProductsPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [skuSearch, setSkuSearch] = useState("");
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState("sku");
@@ -62,6 +82,7 @@ export default function ProductsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<any>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [confirm, setConfirm] = useState<{ title: string; message: string; onConfirm: () => void } | null>(null);
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
@@ -69,10 +90,18 @@ export default function ProductsPage() {
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ["products", search, status, page, sortBy, sortDir],
+    queryKey: ["products", search, skuSearch, status, page, sortBy, sortDir],
     queryFn: () =>
       api.get("/api/products", {
-        params: { name: search || undefined, status: status || undefined, page, limit: PAGE_SIZE, sort_by: sortBy, sort_dir: sortDir },
+        params: {
+          name: search || undefined,
+          sku: skuSearch || undefined,
+          status: status || undefined,
+          page,
+          limit: PAGE_SIZE,
+          sort_by: sortBy,
+          sort_dir: sortDir
+        },
       }).then(r => r.data),
   });
 
@@ -90,6 +119,12 @@ export default function ProductsPage() {
       setSelected(new Set());
     },
     onError: () => showToast("Bulk delete failed", "error"),
+  });
+
+  const deleteAll = useMutation({
+    mutationFn: () => api.delete("/api/products?confirm=yes"),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["products"] }); showToast("All products deleted"); },
+    onError: () => showToast("Failed to delete all products", "error"),
   });
 
   const update = useMutation({
@@ -115,15 +150,46 @@ export default function ProductsPage() {
 
   const exportCsv = () => { window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/products/export/csv`, "_blank"); };
 
+  const handleDeleteOne = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setConfirm({
+      title: "Delete Product",
+      message: "Are you sure you want to delete this product? This cannot be undone.",
+      onConfirm: () => { del.mutate(id); setConfirm(null); }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    setConfirm({
+      title: `Delete ${selected.size} Products`,
+      message: `Are you sure you want to delete ${selected.size} selected products? This cannot be undone.`,
+      onConfirm: () => { bulkDel.mutate(Array.from(selected)); setConfirm(null); }
+    });
+  };
+
+  const handleDeleteAll = () => {
+    setConfirm({
+      title: "Delete All Products",
+      message: `This will permanently delete ALL ${data?.total ?? ""} products from the database. This action cannot be undone. Are you absolutely sure?`,
+      onConfirm: () => { deleteAll.mutate(); setConfirm(null); }
+    });
+  };
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       {editing && <EditModal product={editing} onClose={() => setEditing(null)}
         onSave={(form) => update.mutate({ id: editing.id, data: form })} />}
+      {confirm && <ConfirmModal title={confirm.title} message={confirm.message}
+        onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />}
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Products</h1>
         <div className="flex gap-2">
+          <button onClick={handleDeleteAll}
+            className="border border-red-200 text-red-600 px-4 py-2 rounded text-sm hover:bg-red-50">
+            Delete All
+          </button>
           <button onClick={exportCsv} className="border px-4 py-2 rounded text-sm hover:bg-gray-50">Export CSV</button>
           <a href="/import" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Import CSV</a>
         </div>
@@ -132,6 +198,8 @@ export default function ProductsPage() {
       <div className="flex gap-3 mb-4">
         <input className="border rounded px-3 py-2 flex-1 text-sm" placeholder="Search by name..."
           value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+        <input className="border rounded px-3 py-2 w-48 text-sm" placeholder="Search by SKU..."
+          value={skuSearch} onChange={e => { setSkuSearch(e.target.value); setPage(1); }} />
         <select className="border rounded px-3 py-2 text-sm" value={status}
           onChange={e => { setStatus(e.target.value); setPage(1); }}>
           <option value="">All</option>
@@ -143,8 +211,7 @@ export default function ProductsPage() {
       {selected.size > 0 && (
         <div className="mb-3 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded px-4 py-2 text-sm">
           <span className="text-blue-700 font-medium">{selected.size} selected</span>
-          <button onClick={() => bulkDel.mutate(Array.from(selected))}
-            className="text-red-600 hover:text-red-800 font-medium">Delete selected</button>
+          <button onClick={handleBulkDelete} className="text-red-600 hover:text-red-800 font-medium">Delete selected</button>
           <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-700">Clear</button>
         </div>
       )}
@@ -169,9 +236,11 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
+              {data?.items?.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-gray-400">No products found</td></tr>
+              )}
               {data?.items?.map((p: any) => (
-                <tr key={p.id} className="border-t hover:bg-gray-50 cursor-pointer"
-                  onClick={() => setEditing(p)}>
+                <tr key={p.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => setEditing(p)}>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(p.id)}
                       onChange={e => {
@@ -190,7 +259,7 @@ export default function ProductsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => del.mutate(p.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
+                    <button onClick={e => handleDeleteOne(e, p.id)} className="text-red-500 hover:text-red-700 text-xs">Delete</button>
                   </td>
                 </tr>
               ))}
