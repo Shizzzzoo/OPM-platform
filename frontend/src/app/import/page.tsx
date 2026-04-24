@@ -21,7 +21,7 @@ export default function ImportPage() {
     const jobId = res.data.job_id;
     setJob(jobId);
     setUploading(false);
-    const es = new EventSource(`http://localhost:8000/api/import/${jobId}/progress`);
+    const es = new EventSource(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/import/${jobId}/progress`);
     esRef.current = es;
     es.onmessage = (e) => {
       const data = JSON.parse(e.data);

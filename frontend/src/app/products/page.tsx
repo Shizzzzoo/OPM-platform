@@ -113,7 +113,7 @@ export default function ProductsPage() {
     </span>
   );
 
-  const exportCsv = () => { window.open("http://localhost:8000/api/products/export/csv", "_blank"); };
+  const exportCsv = () => { window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/products/export/csv`, "_blank"); };
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
