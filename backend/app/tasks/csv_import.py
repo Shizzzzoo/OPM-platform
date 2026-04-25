@@ -26,7 +26,7 @@ def process_csv(self, job_id: str, file_path: str):
 
         inserted = failed = 0
         chunk = []
-        seen_skus = {}  # deduplicate within chunk
+        seen_skus = {}
 
         with open(file_path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
@@ -51,21 +51,11 @@ def process_csv(self, job_id: str, file_path: str):
                     quantity = 0
 
                 desc = (row.get("Description") or row.get("description") or "").strip()
-
-                # Last-write-wins for duplicate SKUs within the same chunk
-                seen_skus[sku] = (
-                    str(uuid.uuid4()),
-                    sku,
-                    name,
-                    desc,
-                    price,
-                    quantity,
-                )
+                seen_skus[sku] = (str(uuid.uuid4()), sku, name, desc, price, quantity)
 
                 if len(seen_skus) >= CHUNK_SIZE:
-                    chunk = list(seen_skus.values())
-                    bulk_upsert(chunk)
-                    inserted += len(chunk)
+                    bulk_upsert(list(seen_skus.values()))
+                    inserted += len(seen_skus)
                     seen_skus = {}
                     update_job(db, job_id,
                         processed_rows=inserted + failed,
@@ -96,14 +86,9 @@ def process_csv(self, job_id: str, file_path: str):
         db.close()
 
 def bulk_upsert(rows: list):
-    with engine.begin() as conn:
+    # Use a fresh connection for each chunk to avoid timeout issues
+    with engine.connect() as conn:
         raw = conn.connection
-        conn.execute(text("""
-            CREATE TEMP TABLE IF NOT EXISTS products_staging (
-                id TEXT, sku TEXT, name TEXT, description TEXT,
-                price DOUBLE PRECISION, quantity INTEGER
-            ) ON COMMIT DELETE ROWS
-        """))
         buf = io.StringIO()
         for r in rows:
             id_, sku, name, desc, price, qty = r
@@ -118,7 +103,15 @@ def bulk_upsert(rows: list):
             ])
             buf.write(line + "\n")
         buf.seek(0)
+
         cursor = raw.cursor()
+        cursor.execute("""
+            CREATE TEMP TABLE IF NOT EXISTS products_staging (
+                id TEXT, sku TEXT, name TEXT, description TEXT,
+                price DOUBLE PRECISION, quantity INTEGER
+            )
+        """)
+        cursor.execute("TRUNCATE products_staging")
         cursor.copy_from(buf, "products_staging",
                          columns=("id", "sku", "name", "description", "price", "quantity"))
         cursor.execute("""
